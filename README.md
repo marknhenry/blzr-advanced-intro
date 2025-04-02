@@ -21,6 +21,9 @@ git config --global user.name "Mark Henry"
 gh repo clone marknhenry/blzr-advanced-intro
 ```
 
+## Create the new Blazor App
+
+
 ## Running Jupyter
 ``` bash
 jupyter notebook --ip 0.0.0.0 --no-browser --allow-root
