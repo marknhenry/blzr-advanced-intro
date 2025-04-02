@@ -1,7 +1,34 @@
-FROM ubuntu:latest
+# FROM ubuntu:latest
 
-ENV PATH="/root/miniconda3/bin:${PATH}"
-ARG PATH="/root/miniconda3/bin:${PATH}"
+# ENV PATH="/root/miniconda3/bin:${PATH}"
+# ARG PATH="/root/miniconda3/bin:${PATH}"
+
+
+# # Github CLI Installation
+# RUN type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
+
+# RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+#     && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+#     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+#     && sudo apt update \
+#     && sudo apt install gh -y
+
+# # Miniconda Installation
+# RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh \
+#     && mkdir /root/.conda \
+#     && bash Miniconda3-latest-Linux-aarch64.sh -b \
+#     && rm -f Miniconda3-latest-Linux-aarch64.sh 
+
+# # Setting up Base Environment for work
+# RUN conda update -n base -c defaults conda -y \
+#     && conda init bash \
+#     && conda install -y numpy pandas matplotlib scipy sympy autopep8 requests \
+#     && conda install -c conda-forge notebook \
+#     && conda clean -a
+
+ARG REPO=mcr.microsoft.com/dotnet/aspnet
+# Installer image
+FROM amd64/buildpack-deps:noble-curl AS installer
 
 # Basic Installation and fixing timezone
 RUN apt-get update  \
@@ -11,24 +38,55 @@ RUN apt-get update  \
     && apt-get install -y wget graphviz libgraphviz-dev unzip git sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# Github CLI Installation
-RUN type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
+# Install .NET SDK
+RUN curl -fSL --output dotnet.tar.gz https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.202/dotnet-sdk-9.0.202-linux-x64.tar.gz \
+    && dotnet_sha512='0eb52300023d9df6494aadfbd8380dddf84e2f217d444ad9fe880292afbf378be3700d7fbeca3136ec95962ba355e44abfc9f8a679cd0d08e68f85cb0320ce73' \
+    && echo "$dotnet_sha512  dotnet.tar.gz" | sha512sum -c - \
+    && mkdir -p /dotnet \
+    && tar -oxzf dotnet.tar.gz -C /dotnet ./packs ./sdk ./sdk-manifests ./templates ./LICENSE.txt ./ThirdPartyNotices.txt \
+    && rm dotnet.tar.gz
 
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-    && sudo apt update \
-    && sudo apt install gh -y
 
-# Miniconda Installation
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh \
-    && mkdir /root/.conda \
-    && bash Miniconda3-latest-Linux-aarch64.sh -b \
-    && rm -f Miniconda3-latest-Linux-aarch64.sh 
+# .NET SDK image
+FROM $REPO:9.0.3-noble-amd64
 
-# Setting up Base Environment for work
-RUN conda update -n base -c defaults conda -y \
-    && conda init bash \
-    && conda install -y numpy pandas matplotlib scipy sympy autopep8 requests \
-    && conda install -c conda-forge notebook \
-    && conda clean -a
+ENV \
+    # Do not generate certificate
+    DOTNET_GENERATE_ASPNET_CERTIFICATE=false \
+    # Do not show first run text
+    DOTNET_NOLOGO=true \
+    # SDK version
+    DOTNET_SDK_VERSION=9.0.202 \
+    # Enable correct mode for dotnet watch (only mode supported in a container)
+    DOTNET_USE_POLLING_FILE_WATCHER=true \
+    # Skip extraction of XML docs - generally not useful within an image/container - helps performance
+    NUGET_XMLDOC_MODE=skip \
+    # PowerShell telemetry for docker image usage
+    POWERSHELL_DISTRIBUTION_CHANNEL=PSDocker-DotnetSDK-Ubuntu-24.04
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        git \
+        libatomic1 \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=installer ["/dotnet", "/usr/share/dotnet"]
+
+# Trigger first run experience by running arbitrary cmd
+RUN dotnet help
+
+# Install PowerShell global tool
+RUN powershell_version=7.5.0 \
+    && curl -fSL --output PowerShell.Linux.x64.$powershell_version.nupkg https://powershellinfraartifacts-gkhedzdeaghdezhr.z01.azurefd.net/tool/$powershell_version/PowerShell.Linux.x64.$powershell_version.nupkg \
+    && powershell_sha512='997a634bf50a3e742d00badcc2ce0a4fd1e65e430c371fc276ead7634193f029e5670118c099bd2b3e6d2e06c6eb3cb00b4352c734ab3fd360dd7b79428ecb46' \
+    && echo "$powershell_sha512  PowerShell.Linux.x64.$powershell_version.nupkg" | sha512sum -c - \
+    && mkdir -p /usr/share/powershell \
+    && dotnet tool install --add-source / --tool-path /usr/share/powershell --version $powershell_version PowerShell.Linux.x64 \
+    && dotnet nuget locals all --clear \
+    && rm PowerShell.Linux.x64.$powershell_version.nupkg \
+    && ln -s /usr/share/powershell/pwsh /usr/bin/pwsh \
+    && chmod 755 /usr/share/powershell/pwsh \
+    # To reduce image size, remove the copy nupkg that nuget keeps.
+    && find /usr/share/powershell -print | grep -i '.*[.]nupkg$' | xargs rm
