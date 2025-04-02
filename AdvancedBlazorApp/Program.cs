@@ -1,10 +1,13 @@
 using AdvancedBlazorApp.Components;
+using AdvancedBlazorApp.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+
+// Add Data Services to the DI container
+builder.Services.AddSingleton<DataService>();
 
 var app = builder.Build();
 
