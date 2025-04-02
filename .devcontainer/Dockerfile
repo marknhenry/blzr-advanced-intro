@@ -28,7 +28,7 @@
 
 ARG REPO=mcr.microsoft.com/dotnet/aspnet
 # Installer image
-FROM amd64/buildpack-deps:noble-curl AS installer
+FROM arm64/buildpack-deps:noble-curl AS installer
 
 # Basic Installation and fixing timezone
 RUN apt-get update  \
