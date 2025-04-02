@@ -26,7 +26,7 @@ RUN curl -fSL --output dotnet.tar.gz https://builds.dotnet.microsoft.com/dotnet/
 
 
 # .NET SDK image
-FROM $REPO:9.0.3-noble-arm64v8
+FROM $REPO:9.0.3-noble-amd64
 
 ENV \
     # Do not generate certificate
