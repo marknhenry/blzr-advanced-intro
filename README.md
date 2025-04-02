@@ -18,7 +18,7 @@ docker exec -it razorbase /bin/bash # Log into container
 gh auth login
 git config --global user.email "marknhenry@live.com"
 git config --global user.name "Mark Henry"
-gh repo clone marknhenry/razor-base
+gh repo clone marknhenry/blzr-advanced-intro
 ```
 
 ## Running Jupyter
