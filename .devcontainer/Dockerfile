@@ -1,6 +1,25 @@
-ARG REPO=mcr.microsoft.com/dotnet/aspnet
+ARG REPO=mcr.microsoft.com/dotnet/runtime
+
 # Installer image
-FROM arm64v8/ubuntu AS installer
+FROM arm64v8/buildpack-deps:noble-curl AS installer
+
+# Retrieve ASP.NET Core
+RUN aspnetcore_version=9.0.3 \
+    && curl -fSL --output aspnetcore.tar.gz https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/$aspnetcore_version/aspnetcore-runtime-$aspnetcore_version-linux-arm64.tar.gz \
+    && aspnetcore_sha512='8a027078b46b6ebb3f4beda2b3f3cf7960701b71b9f2b6704c17f2752279c764755cadfd30f3e2f3e3ab26869e50a35c567c2fbd41fd98d77ae2f6fecde18b50' \
+    && echo "$aspnetcore_sha512  aspnetcore.tar.gz" | sha512sum -c - \
+    && mkdir -p /dotnet \
+    && tar -oxzf aspnetcore.tar.gz -C /dotnet ./shared/Microsoft.AspNetCore.App \
+    && rm aspnetcore.tar.gz
+
+
+# ASP.NET Core image
+FROM $REPO:9.0.3-noble-arm64v8
+
+# ASP.NET Core version
+ENV ASPNET_VERSION=9.0.3
+
+COPY --from=installer ["/dotnet", "/usr/share/dotnet"]
 
 # Initial Setup
 RUN apt-get update \
@@ -16,45 +35,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | s
     && sudo apt update \
     && sudo apt install gh -y
 
-# Install .NET SDK
-RUN curl -fSL --output dotnet.tar.gz https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.202/dotnet-sdk-9.0.202-linux-x64.tar.gz \
-    && dotnet_sha512='0eb52300023d9df6494aadfbd8380dddf84e2f217d444ad9fe880292afbf378be3700d7fbeca3136ec95962ba355e44abfc9f8a679cd0d08e68f85cb0320ce73' \
-    && echo "$dotnet_sha512  dotnet.tar.gz" | sha512sum -c - \
-    && mkdir -p /dotnet \
-    && tar -oxzf dotnet.tar.gz -C /dotnet ./packs ./sdk ./sdk-manifests ./templates ./LICENSE.txt ./ThirdPartyNotices.txt \
-    && rm dotnet.tar.gz
-
-
-# .NET SDK image
-FROM $REPO:9.0.3-noble-amd64
-
-ENV \
-    # Do not generate certificate
-    DOTNET_GENERATE_ASPNET_CERTIFICATE=false \
-    # Do not show first run text
-    DOTNET_NOLOGO=true \
-    # SDK version
-    DOTNET_SDK_VERSION=9.0.202 \
-    # Enable correct mode for dotnet watch (only mode supported in a container)
-    DOTNET_USE_POLLING_FILE_WATCHER=true \
-    # Skip extraction of XML docs - generally not useful within an image/container - helps performance
-    NUGET_XMLDOC_MODE=skip \
-    # PowerShell telemetry for docker image usage
-    POWERSHELL_DISTRIBUTION_CHANNEL=PSDocker-DotnetSDK-Ubuntu-24.04
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        curl \
-        git \
-        libatomic1 \
-        wget \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=installer ["/dotnet", "/usr/share/dotnet"]
-
-# Trigger first run experience by running arbitrary cmd
-RUN dotnet help
-
 # Install PowerShell global tool
 RUN powershell_version=7.5.0 \
     && curl -fSL --output PowerShell.Linux.x64.$powershell_version.nupkg https://powershellinfraartifacts-gkhedzdeaghdezhr.z01.azurefd.net/tool/$powershell_version/PowerShell.Linux.x64.$powershell_version.nupkg \
@@ -68,16 +48,3 @@ RUN powershell_version=7.5.0 \
     && chmod 755 /usr/share/powershell/pwsh \
     # To reduce image size, remove the copy nupkg that nuget keeps.
     && find /usr/share/powershell -print | grep -i '.*[.]nupkg$' | xargs rm
-
-# # Miniconda Installation
-# RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh \
-#     && mkdir /root/.conda \
-#     && bash Miniconda3-latest-Linux-aarch64.sh -b \
-#     && rm -f Miniconda3-latest-Linux-aarch64.sh 
-
-# # Setting up Base Environment for work
-# RUN conda update -n base -c defaults conda -y \
-#     && conda init bash \
-#     && conda install -y numpy pandas matplotlib scipy sympy autopep8 requests \
-#     && conda install -c conda-forge notebook \
-#     && conda clean -a
