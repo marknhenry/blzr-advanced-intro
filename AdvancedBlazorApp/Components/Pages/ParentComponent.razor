@@ -1,0 +1,10 @@
+@using Microsoft.AspNetCore.Components
+
+@code {
+    [CascadingParameter]
+    public string? ThemeColor { get; set; }
+}
+
+<div style="padding:10px; border:1px solid black;">
+        <p style="color:@ThemeColor;">Reusable Component Content</p>
+</div>
